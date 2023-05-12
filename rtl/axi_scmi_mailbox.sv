@@ -38,7 +38,7 @@ import scmi_reg_pkg::*;
   typedef logic [AXI_DATA_WIDTH/8-1:0] strb_t;
 
   logic [3:0]                          unused;
-  logic                                mailbox_loaded; 
+  logic                                mailbox_aw_loaded, mailbox_w_loaded; 
   axi_lite_resp_t axi_lite_to_reg_rsp;
 
   //-- this assigns are equal to the original case, they are only unpacked to be able to access w_ready and aw_ready signals 
@@ -49,18 +49,30 @@ import scmi_reg_pkg::*;
   assign axi_mbox_rsp.r_valid = axi_lite_to_reg_rsp.r_valid;
 
   //-- Drive low the w_ready and aw_ready of the scmi mailbox if the dorbell irq is high
-  assign axi_mbox_rsp.aw_ready = mailbox_loaded ? 1'b0 : axi_lite_to_reg_rsp.aw_ready;
-  assign axi_mbox_rsp.w_ready  = mailbox_loaded ? 1'b0 : axi_lite_to_reg_rsp.w_ready;
+  assign axi_mbox_rsp.aw_ready = mailbox_aw_loaded ? 1'b0 : axi_lite_to_reg_rsp.aw_ready;
+  assign axi_mbox_rsp.w_ready  = mailbox_w_loaded ? 1'b0 : axi_lite_to_reg_rsp.w_ready;
 
   always_ff @(posedge clk_i, negedge rst_ni) begin 
       if(!rst_ni)
-          mailbox_loaded <= 1'b0;
+          mailbox_aw_loaded <= 1'b0;
       else begin    
           //-- It means we are trying to write the doorbell register 
-          if(!mailbox_loaded & axi_mbox_req.aw_valid & axi_mbox_req.aw_addr == 32'h10404020)
-              mailbox_loaded <= 1'b1;
-          else if (axi_mbox_req.aw_valid & axi_mbox_req.aw_addr == 32'h10404020)
-              mailbox_loaded <= 1'b0;
+          if(!mailbox_aw_loaded & axi_mbox_req.aw_valid & axi_mbox_req.aw.addr == 32'h10404024 & axi_mbox_rsp.aw_ready)
+              mailbox_aw_loaded <= 1'b1;
+          else if (axi_mbox_req.aw_valid & axi_mbox_req.aw.addr == 32'h10404024 & axi_mbox_rsp.aw_ready)
+              mailbox_aw_loaded <= 1'b0;
+      end    
+  end  
+
+  always_ff @(posedge clk_i, negedge rst_ni) begin 
+      if(!rst_ni)
+          mailbox_w_loaded <= 1'b0;
+      else begin    
+          //-- It means we are trying to write the doorbell register 
+          if(!mailbox_w_loaded & axi_mbox_req.w_valid & axi_mbox_rsp.w_ready & mailbox_aw_loaded)
+              mailbox_w_loaded <= 1'b1;
+          else if (axi_mbox_req.w_valid & axi_mbox_rsp.w_ready & !mailbox_aw_loaded)
+              mailbox_w_loaded <= 1'b0;
       end    
   end  
 
@@ -127,4 +139,4 @@ import scmi_reg_pkg::*;
     .devmode_i(1'b0)
   );
 
-endmodule // axi_scmi_mailbox
+endmodule // axi_scmi_mailbox/
